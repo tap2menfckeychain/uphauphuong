@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tap2me · Gửi hậu phương</title>
+<style>
+:root{--rose:#c4687a;--deep:#9e3148;--soft:#f7e6e8;--ink:#3d2e28;--mut:#7a6258;--bg:#faf5ef;--line:#e6d8c8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 80px}
+h1{font-size:1.5rem;color:var(--deep);margin:.2em 0 .1em}.sub{color:var(--mut);margin:0 0 18px}
+section,details{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin:0 0 14px}
+h2{font-size:1.05rem;margin:0 0 10px;color:var(--deep)}summary{cursor:pointer;font-weight:600}
+label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}
+input[type=text],input[type=password],input[type=date],textarea,select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;background:#fff}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--rose)}
+textarea{min-height:70px;resize:vertical}input[type=file]{width:100%;font-size:.9rem}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.slot{padding:10px 0;border-top:1px dashed var(--line)}
+small{color:var(--mut);display:block;margin-top:3px}
+button{font:inherit;cursor:pointer;border:0;border-radius:99px;padding:10px 18px;background:var(--soft);color:var(--deep);font-weight:600}
+button.main{background:var(--rose);color:#fff;width:100%;padding:14px;font-size:1.05rem;margin-top:6px}
+button:disabled{opacity:.5;cursor:wait}
+.ok{color:#2e7d4f}.err{color:#b3261e}
+#log{white-space:pre-wrap;font:13px/1.6 ui-monospace,Menlo,monospace;background:#2b211d;color:#f1e6dc;border-radius:12px;padding:12px;display:none}
+#result{display:none;text-align:center}#result a{word-break:break-all;color:var(--deep);font-weight:600}
+#qr{display:flex;justify-content:center;margin:12px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>★ Tap2me · Gửi hậu phương</h1>
+<p class="sub">Điền thông tin khách → bấm Tạo → nhận link để ghi vào chip NFC.</p>
+
+<details id="settings">
+  <summary>⚙ Kết nối GitHub (làm một lần)</summary>
+  <label>Token GitHub (giữ kín, chỉ lưu trong trình duyệt này; cần quyền Contents: Read and write cho TẤT CẢ repo template)</label>
+  <input type="password" id="s_token" autocomplete="off" placeholder="github_pat_...">
+  <div class="row">
+    <div><label>Tên tài khoản / tổ chức</label><input type="text" id="s_owner"></div>
+    <div><label>Nhánh</label><input type="text" id="s_branch"></div>
+  </div>
+  <p><button type="button" id="saveCfg">Lưu cài đặt</button> <span id="cfgMsg"></span></p>
+</details>
+
+<section style="display:none">
+  <h2>0. Chọn mẫu</h2>
+  <select id="tpl"></select>
+  <label>Tên repo GitHub của mẫu này</label>
+  <input type="text" id="repo">
+  <small>Mỗi mẫu một repo; tên repo được nhớ riêng cho từng mẫu.</small>
+</section>
+
+<form id="f">
+  <section>
+    <h2>1. Link của khách</h2>
+    <label>Tên thư mục (chữ thường, không dấu, ví dụ: anhiumodi)</label>
+    <div class="row"><input type="text" id="slug" autocomplete="off" placeholder="tenkhach"><button type="button" id="rand" style="flex:0 0 auto">+ mã ngẫu nhiên</button></div>
+    <small id="slugHint"></small>
+    <p style="margin:10px 0 0"><button type="button" id="check">Kiểm tra / tải đơn cũ để sửa</button> <span id="checkMsg"></span></p>
+  </section>
+
+  <section id="boxText"></section>
+  <section id="boxImg"></section>
+
+  <section id="boxMedia">
+    <h2>4. Video & nhạc</h2>
+    <div id="boxVideo">
+      <label>Video (không bắt buộc, nên dưới 25MB)</label>
+      <input type="file" id="video" accept="video/*"><small id="s_video"></small>
+    </div>
+    <label>Nhạc nền</label>
+    <select id="musicSel"></select>
+    <div id="musicUp" style="display:none">
+      <label>File nhạc (.mp3, dưới 15MB)</label><input type="file" id="musicFile" accept="audio/*">
+      <label>Tên bài hát hiển thị</label><input type="text" id="musicName">
+    </div>
+  </section>
+
+  <button class="main" id="go" type="submit">Tạo trang ✨</button>
+</form>
+
+<section id="result" style="margin-top:14px">
+  <h2>Xong rồi!</h2>
+  <p id="resStatus"></p>
+  <a id="resLink" target="_blank" rel="noopener"></a>
+  <div id="qr"></div>
+  <button type="button" id="copy">Sao chép link</button>
+</section>
+<pre id="log"></pre>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+/* ================= CẤU HÌNH TỪNG TEMPLATE =================
+   text: [id, nhãn, giá trị mặc định, số dòng (nếu là ô nhiều dòng)]
+   img : [khóa, nhãn, cạnh dài tối đa (px), bắt buộc(1/0), có chú thích(1/0)]
+   music: def = tên lựa chọn "giữ nhạc mặc định của template"; lib = nhạc có sẵn trong repo; none = cho phép không nhạc
+   render(html, v, p, m): sửa trực tiếp file index.html của template cho từng khách
+        v = chữ, p = tên file ảnh, m = {nhac, ten}; ô để trống = giữ chữ mẫu
+   Muốn thêm template mới: thêm một khối vào T, không cần sửa chỗ khác. */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const nl  = s => esc(s).replace(/\n/g, "<br>");
+const el  = (attr, tag) => new RegExp("(" + attr + "[^>]*>)[\\s\\S]*?(</" + tag + ">)");
+const inner = (h, re, t) => t ? h.replace(re, (m, a, b) => a + t + b) : h;
+const rp  = (h, from, to) => to ? h.replace(from, () => to) : h;
+const mp  = n => /^\.\.\//.test(n) ? n : "@@" + n;                      // @@ = file nằm trong thư mục khách
+const setAudio = (h, re, m) => m.nhac ? h.replace(re, (a, b) => b + mp(m.nhac)) : h;
+const cycle = (p, keys) => { const A = keys.map(k => p[k]).filter(Boolean); return keys.map((k, i) => A[i % A.length]); };
+
+const T = {
+guihauphuong: {
+  name: "Gửi hậu phương – thư người lính", repo: "guihauphuong",
+  music: { def: "Giữ bài mặc định (Tự Hào Màu Áo Lính)", lib: [] },
+  text: [
+    ["herName","Tên người nhận (để trống = gọi là “em”)",""],
+    ["hisName","Tên người ký (để trống = giữ chữ mẫu)","Chàng học viên của em"],
+    ["ngayNhapHoc","Ngày nhập học (đếm số ngày làm học viên; để trống = hiện ∞)","",0,"date"],
+    ["ngayRaTruong","Ngày dự kiến ra trường (đếm ngược; để trống = không đếm)","",0,"date"],
+    ["ngayThu","Dòng ngày / nơi viết thư","Học viện, một tối sau giờ tự học"],
+    ["loiNhan","Nội dung lá thư (cách nhau một dòng trống = đoạn mới)","",9],
+    ["trich","Câu trích nổi bật cuối thư (không bắt buộc)",""],
+    ["kyLoi","Lời ký (dòng trên tên)","Thương em thật nhiều,"],
+    ["hisName","Tên người ký","Chàng học viên của em"],
+    ["l1","Lời hứa 1","Anh sẽ giữ gìn sức khỏe — để em không phải lo.",2],
+    ["l2","Lời hứa 2","Anh sẽ học thật giỏi, rèn luyện thật tốt — để em tự hào về anh.",2],
+    ["l3","Lời hứa 3","Cuối tuần nào được cầm điện thoại, người đầu tiên anh gọi là em.",2],
+    ["l4","Lời hứa 4","Ngày anh ra trường, người anh muốn thấy đầu tiên là em.",2],
+    ["caSi","Ca sĩ (nếu đổi nhạc)",""],
+  ],
+  img: [1,2,3,4].map(i => ["a"+i, "Ảnh kỷ niệm "+i, 1200, 1, 1]),
+  render: (h, v, p, m) => {
+    for (let i = 1; i <= 4; i++) h = h.replace('src="images/photo' + i + '.jpg"', 'src="@@' + p["a"+i] + '"');
+    let i = 0; h = h.replace(/(<figcaption>)([^<]*)/g, (a, b, o) => b + (esc(v["c_a" + (++i)] || "") || o));
+    h = inner(h, el('class="letter-date"','p'), esc(v.ngayThu));
+    h = rp(h, "<span>Thương em thật nhiều,</span>", v.kyLoi && "<span>" + esc(v.kyLoi) + "</span>");
+    if (v.loiNhan) {
+      const ps = v.loiNhan.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean).map(s => "<p>" + nl(s) + "</p>").join("\n")
+        + (v.trich ? '<blockquote class="letter-quote">' + esc(v.trich) + "</blockquote>" : "");
+      h = h.replace(/(<div class="letter-content">)[\s\S]*?(<div class="signature">)/, (a, b, c) => b + ps + c);
+    }
+    let j = 0; h = h.replace(/(<div class="promise-back">\s*<p>)([^<]*)/g, (a, b, o) => b + (esc(v["l" + (++j)] || "") || o));
+    if (m.ten) {
+      h = h.replace(/(<div class="player-info">\s*<strong>)[^<]*(<\/strong>\s*<span>)[^<]*/, (a, b, c) => b + esc(m.ten) + c + esc(v.caSi || ""));
+      h = h.replace(/<div>NHẠC:[^<]*<\/div>/, () => "<div>NHẠC: " + esc((m.ten + (v.caSi ? " — " + v.caSi : "")).toUpperCase()) + "</div>");
+    }
+    h = setAudio(h, /(<source src=")[^"]*/, m);
+    return h.replace('<script src="script.js"></script>', '<script src="@@script.js"></script>');
+  },
+  // CONFIG nằm trong script.js nên mỗi khách có một bản script.js riêng (chỉ khác khối CONFIG)
+  extra: async v => {
+    let s = await gh(`/contents/script.js?ref=${encodeURIComponent(C.branch)}`, {raw:true});
+    const set = (k, val) => { const re = new RegExp("(" + k + ":\\s*)\"[^\"]*\""); if (!re.test(s)) throw new Error("Không tìm thấy “" + k + "” trong script.js của template."); s = s.replace(re, (a, b) => b + JSON.stringify(val)); };
+    set("tenEm", v.herName); set("chuKy", v.hisName); set("ngayNhapHoc", v.ngayNhapHoc); set("ngayRaTruong", v.ngayRaTruong);
+    return [{ path: "script.js", text: s }];
+  },
+},
+};
+
+/* ================= TIỆN ÍCH ================= */
+const $ = id => document.getElementById(id);
+const store = { get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} } };
+let C = { token:"", owner:"tap2menfckeychain", branch:"main", repos:{}, ...(()=>{ try{ return JSON.parse(store.get("tap2me_cfg2")||"{}"); }catch(e){ return {}; } })() };
+const rnd = n => Array.from({length:n},()=>"abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(Math.random()*31)]).join("");
+const slugify = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"d").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40);
+const log = m => { const l=$("log"); l.style.display="block"; l.textContent += m+"\n"; l.scrollTop=l.scrollHeight; };
+const b64 = blob => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(blob); });
+const encPath = p => p.split("/").map(encodeURIComponent).join("/");
+let tk = "guihauphuong", existing = null, loadedSlug = null, exP = {};
+const TP = () => T[tk];
+const repo = () => (C.repos[tk] || TP().repo);
+const siteBase = () => `https://${C.owner}.github.io/${repo()}/`;
+
+async function gh(path, {method="GET", body, raw}={}) {
+  const r = await fetch(`https://api.github.com/repos/${C.owner}/${repo()}${path}`, {
+    method,
+    headers: { Authorization:"Bearer "+C.token, Accept: raw?"application/vnd.github.raw+json":"application/vnd.github+json", ...(body?{"Content-Type":"application/json"}:{}) },
+    body: body?JSON.stringify(body):undefined });
+  if (!r.ok) { const e=new Error("HTTP "+r.status); e.status=r.status; try{ e.detail=(await r.json()).message; }catch(_){} throw e; }
+  return raw ? r.text() : r.json();
+}
+const explain = e => e.status===401 ? "Token sai hoặc hết hạn."
+  : (e.status===403||e.status===404) ? "Token chưa đủ quyền (cần Contents: Read and write cho repo “"+repo()+"”) hoặc sai tên tài khoản/repo/nhánh."
+  : (e.message+(e.detail?" – "+e.detail:""));
+
+/* ================= CÀI ĐẶT & CHỌN TEMPLATE ================= */
+["token","owner","branch"].forEach(k => $("s_"+k).value = C[k]||"");
+if (!C.token) $("settings").open = true;
+$("saveCfg").onclick = () => { ["token","owner","branch"].forEach(k => C[k] = $("s_"+k).value.trim());
+  store.set("tap2me_cfg2", JSON.stringify(C)); $("cfgMsg").textContent="Đã lưu ✓"; $("cfgMsg").className="ok"; hint(); };
+
+Object.entries(T).forEach(([k,t]) => { const o=document.createElement("option"); o.value=k; o.textContent=t.name; $("tpl").appendChild(o); });
+$("tpl").onchange = () => { tk=$("tpl").value; existing=null; loadedSlug=null; exP={}; $("repo").value=repo(); $("checkMsg").textContent=""; buildForm(); hint(); };
+$("repo").oninput = () => { C.repos[tk]=$("repo").value.trim(); store.set("tap2me_cfg2", JSON.stringify(C)); hint(); };
+
+function buildForm() {
+  const t = TP();
+  $("boxText").innerHTML = '<h2>2. Chữ trên trang</h2>' + (tk==="relationship" ? "" : "<small>Ô để trống = giữ chữ mẫu của template.</small>");
+  t.text.forEach(([id,lb,df,rows,type]) => { const d=document.createElement("div");
+    d.innerHTML = `<label>${lb}</label>` + (rows ? `<textarea id="v_${id}" rows="${rows}"></textarea>` : `<input type="${type||"text"}" id="v_${id}">`);
+    $("boxText").appendChild(d); $("v_"+id).value = df||""; });
+  $("boxImg").innerHTML = "<h2>3. Ảnh</h2>";
+  t.img.forEach(([k,lb,max,req,cap]) => { const d=document.createElement("div"); d.className="slot";
+    d.innerHTML = `<label>${lb}${req?" *":""}</label><input type="file" id="f_${k}" accept="image/*">` +
+      (cap ? `<input type="text" id="c_${k}" placeholder="Chú thích dưới ảnh (không bắt buộc)" style="margin-top:6px">` : "") + `<small id="s_${k}"></small>`;
+    $("boxImg").appendChild(d); });
+  $("boxVideo").style.display = t.video ? "" : "none"; $("s_video").textContent = "";
+  const ms=$("musicSel"); ms.innerHTML=""; const add=(v,x)=>{ const o=document.createElement("option"); o.value=v; o.textContent=x; ms.appendChild(o); };
+  if (t.music.def) add("def", t.music.def);
+  t.music.lib.forEach((m,i) => add("lib"+i, m.name));
+  if (t.music.none) add("none","Không dùng nhạc");
+  add("up","Tải nhạc khác lên...");
+  ms.onchange = () => { $("musicUp").style.display = ms.value==="up" ? "block":"none"; }; ms.onchange();
+}
+
+/* ================= SLUG & TẢI ĐƠN CŨ ================= */
+const curSlug = () => slugify($("slug").value);
+function hint(){ const s=curSlug(); $("slugHint").textContent = s ? "Link sẽ là: "+siteBase()+s+"/" : ""; }
+$("slug").oninput = hint;
+$("rand").onclick = () => { const s=curSlug()||"khach"; $("slug").value = s.replace(/-[a-z0-9]{4}$/,"")+"-"+rnd(4); hint(); };
+
+$("check").onclick = async () => {
+  const s=curSlug(), m=$("checkMsg"); m.className=""; m.textContent="";
+  if(!s){ m.textContent="Nhập tên thư mục trước."; m.className="err"; return; }
+  if(!C.token){ m.textContent="Chưa nhập token ở phần Kết nối GitHub."; m.className="err"; $("settings").open=true; return; }
+  m.textContent="Đang kiểm tra...";
+  try {
+    const d = JSON.parse(await gh(`/contents/${encPath(s+"/data.json")}?ref=${encodeURIComponent(C.branch)}`, {raw:true}));
+    existing = d; loadedSlug = s; fillForm(d);
+    m.textContent="Đã tải đơn cũ. Sửa chữ tùy ý; ảnh nào không chọn lại sẽ giữ nguyên."; m.className="ok";
+  } catch(e) {
+    if (e.status===404) { existing=null; loadedSlug=null; exP={}; m.textContent="Chưa có khách nào dùng tên này ✅"; m.className="ok"; }
+    else { m.textContent=explain(e); m.className="err"; }
+  }
+};
+function fillForm(d){
+  const t=TP(), x = d._f ? {v:d._f, p:d._p||{}} : (t.parse ? t.parse(d) : {v:{},p:{}});
+  exP = x.p;
+  t.text.forEach(([id]) => { if (x.v[id]!=null) $("v_"+id).value = x.v[id]; });
+  t.img.forEach(([k,,,,cap]) => { $("s_"+k).textContent = x.p[k] ? "Đang dùng: "+x.p[k]+" (không chọn file = giữ nguyên)" : ""; if(cap) $("c_"+k).value = x.v["c_"+k]||""; });
+  if (t.video) $("s_video").textContent = d.video ? "Đang dùng: "+d.video+" (không chọn file = giữ nguyên)" : "";
+  const ms=$("musicSel"), li=t.music.lib.findIndex(m=>m.path===d.nhac);
+  ms.value = li>=0 ? "lib"+li : d.nhac ? "keep" : (t.music.def ? "def" : "none");
+  if (d.nhac && li<0) { let o=[...ms.options].find(o=>o.value==="keep");
+    if(!o){ o=document.createElement("option"); o.value="keep"; ms.insertBefore(o,ms.firstChild); }
+    o.textContent="Giữ nhạc hiện tại ("+(d.tenBaiHat||d.nhac)+")"; ms.value="keep"; }
+  ms.onchange();
+}
+
+/* ================= NÉN ẢNH ================= */
+async function compress(file, max){
+  let bmp;
+  try { bmp = await createImageBitmap(file, {imageOrientation:"from-image"}); }
+  catch(e){ bmp = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error("Không đọc được ảnh “"+file.name+"”, thử ảnh JPG/PNG.")); i.src=URL.createObjectURL(file); }); }
+  const w=bmp.width||bmp.naturalWidth, h=bmp.height||bmp.naturalHeight, sc=Math.min(1,max/Math.max(w,h));
+  const c=document.createElement("canvas"); c.width=Math.round(w*sc); c.height=Math.round(h*sc);
+  c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+  let blob = await new Promise(r=>c.toBlob(r,"image/webp",.82)), ext="webp";
+  if(!blob || blob.type!=="image/webp"){ blob = await new Promise(r=>c.toBlob(r,"image/jpeg",.85)); ext="jpg"; }
+  return {blob, ext};
+}
+
+/* ================= TẠO TRANG ================= */
+$("f").onsubmit = async ev => {
+  ev.preventDefault();
+  const btn=$("go"), t=TP(); $("log").textContent=""; $("result").style.display="none";
+  try {
+    const slug = curSlug();
+    if(!slug) throw new Error("Chưa nhập tên thư mục cho khách.");
+    if(!C.token){ $("settings").open=true; throw new Error("Chưa nhập token GitHub."); }
+    btn.disabled=true;
+    const dir = slug+"/", files = [];
+
+    if (loadedSlug !== slug) {
+      try { await gh(`/contents/${encPath(dir+"data.json")}?ref=${encodeURIComponent(C.branch)}`);
+        if(!confirm("Link “"+slug+"” đã có khách dùng. Ghi đè lên trang cũ?")) throw new Error("Đã hủy."); }
+      catch(e){ if(e.status!==404) throw e; }
+    }
+
+    // chữ
+    const v = {}; t.text.forEach(([id]) => v[id] = $("v_"+id).value.trim());
+    t.img.forEach(([k,,,,cap]) => { if(cap) v["c_"+k] = $("c_"+k).value.trim(); });
+
+    // ảnh
+    const p = {};
+    for (const [k,lb,max,req] of t.img) {
+      const f = $("f_"+k).files[0];
+      if (f) { log("Nén ảnh: "+lb+"..."); const {blob,ext}=await compress(f,max);
+        const name=`${k}-${rnd(4)}.${ext}`; files.push({path:dir+name, blob}); p[k]=name;
+        log(`  ${(f.size/1048576).toFixed(1)}MB → ${(blob.size/1024).toFixed(0)}KB`); }
+      else if (exP[k]) p[k]=exP[k];
+      else if (req) throw new Error("Thiếu: "+lb);
+    }
+
+    // video
+    let video = existing ? (existing.video||"") : "";
+    const vf = t.video && $("video").files[0];
+    if (vf) {
+      if (vf.size > 60*1048576) throw new Error("Video quá nặng ("+(vf.size/1048576).toFixed(0)+"MB). Hãy nén xuống dưới 25MB.");
+      if (vf.size > 25*1048576) log("⚠ Video khá nặng, repo sẽ phình nhanh.");
+      const ext=(vf.name.split(".").pop()||"mp4").toLowerCase().replace(/[^a-z0-9]/g,"")||"mp4";
+      video=`video-${rnd(4)}.${ext}`; files.push({path:dir+video, blob:vf});
+    }
+
+    // nhạc: m.nhac rỗng = giữ nhạc mặc định (hoặc không nhạc, tùy template)
+    const m = { nhac:"", ten:"", video }; const ms=$("musicSel").value;
+    if (ms.startsWith("lib")) { const l=t.music.lib[+ms.slice(3)]; m.nhac=l.path; m.ten=l.name; }
+    else if (ms==="keep" && existing) { m.nhac=existing.nhac; m.ten=existing.tenBaiHat||""; }
+    else if (ms==="up") {
+      const mf=$("musicFile").files[0]; if(!mf) throw new Error("Chưa chọn file nhạc.");
+      if (mf.size>15*1048576) throw new Error("File nhạc quá nặng (trên 15MB).");
+      m.nhac=`music-${rnd(4)}.mp3`; files.push({path:dir+m.nhac, blob:mf});
+      m.ten=$("musicName").value.trim()||mf.name.replace(/\.[^.]+$/,"");
+    }
+
+    // data.json (relationship đọc trực tiếp; _f/_p để tải lại sửa đơn)
+    const data = { video:m.video, nhac:m.nhac, tenBaiHat:m.ten, ...(t.build ? t.build(v,p) : {}), _f:v, _p:p };
+    files.push({path:dir+"data.json", blob:new Blob([JSON.stringify(data,null,2)],{type:"application/json"})});
+
+    // index.html của khách = bản sao index.html của template (đã thay nội dung), đường dẫn tài nguyên trỏ lên thư mục cha
+    log("Lấy khung template “"+repo()+"”...");
+    let shell = await gh(`/contents/index.html?ref=${encodeURIComponent(C.branch)}`, {raw:true});
+    if (t.render) shell = t.render(shell, v, p, m);
+    shell = shell.replace(/(src|href)="(?!https?:|\/\/|#|data:|mailto:|tel:|javascript:|\.\.\/|@@)([^"]+)"/g, '$1="../$2"')
+      .replace(/@@/g,"").replace(" data-sample","");
+    files.push({path:dir+"index.html", blob:new Blob([shell],{type:"text/html"})});
+    if (t.extra) for (const f of await t.extra(v)) files.push({path:dir+f.path, blob:new Blob([f.text],{type:"text/plain"})});
+
+    // một commit duy nhất
+    log("Đang đưa lên GitHub ("+files.length+" file)...");
+    const ref = await gh(`/git/ref/heads/${encodeURIComponent(C.branch)}`);
+    const base = (await gh(`/git/commits/${ref.object.sha}`)).tree.sha, tree=[];
+    for (const f of files) { const b = await gh("/git/blobs",{method:"POST",body:{content:await b64(f.blob),encoding:"base64"}});
+      tree.push({path:f.path, mode:"100644", type:"blob", sha:b.sha}); }
+    const tr = await gh("/git/trees",{method:"POST",body:{base_tree:base, tree}});
+    const cm = await gh("/git/commits",{method:"POST",body:{message:(loadedSlug===slug?"Sửa trang ":"Tạo trang ")+slug, tree:tr.sha, parents:[ref.object.sha]}});
+    await gh(`/git/refs/heads/${encodeURIComponent(C.branch)}`,{method:"PATCH",body:{sha:cm.sha}});
+    log("✓ Đã lưu lên GitHub.");
+
+    existing = data; exP = p; loadedSlug = slug;
+    showResult(slug);
+  } catch(e) { log("✗ "+(e.status?explain(e):e.message)); }
+  finally { btn.disabled=false; }
+};
+
+/* ================= KẾT QUẢ + CHỜ GITHUB PAGES ================= */
+async function showResult(slug){
+  const url = siteBase()+slug+"/";
+  $("result").style.display="block"; $("resLink").href=url; $("resLink").textContent=url;
+  $("qr").innerHTML=""; try{ new QRCode($("qr"),{text:url,width:180,height:180}); }catch(e){}
+  $("copy").onclick = async()=>{ try{ await navigator.clipboard.writeText(url); $("copy").textContent="Đã sao chép ✓"; }catch(e){ prompt("Sao chép link:",url); } };
+  $("resStatus").textContent="⏳ Đang chờ GitHub cập nhật (thường 1–3 phút). Chưa ghi chip vội nhé..."; $("resStatus").className="";
+  $("result").scrollIntoView({behavior:"smooth"});
+  for (let i=0;i<60;i++) {
+    await new Promise(r=>setTimeout(r,5000));
+    try { const r=await fetch(url+"data.json?t="+Date.now(),{cache:"no-store"}); if(r.ok){
+      $("resStatus").textContent="✅ Trang đã sẵn sàng! Mở link để kiểm tra rồi ghi vào chip NFC."; $("resStatus").className="ok"; return; } } catch(e){}
+  }
+  $("resStatus").textContent="Chưa thấy trang lên sau 5 phút. Hãy mở link thử, hoặc xem tab Actions của repo trên GitHub."; $("resStatus").className="err";
+}
+
+$("repo").value = repo(); buildForm(); hint();
+</script>
+</body>
+</html>
